@@ -15,11 +15,11 @@ The purpose of this repository is to make the open-source software (OSS) dataset
 ├── README.md
 ├── data/
 │   └── IST_OSS_datasets_clean_release.xlsx
-├── scripts/
-│   ├── construct_oss_datasets.py
-│   └── run_experiments.py
-└── results/
-    └── pmae_tables/
+└── scripts/
+  ├── construct_oss_datasets.py
+  └── run_experiments.py
+
+ 
 ```
 
 The main dataset file is:
