@@ -1,174 +1,366 @@
-# Data and Reproducibility Package
+# Software Fault Detection Dataset and Reproduction Package
 
-This repository provides the datasets and supporting files used in the paper:
+This repository contains the data and scripts used to reconstruct monthly
+cumulative software fault-count datasets and reproduce the kernel-regression
+prediction experiments.
 
-**Long-Term Software Reliability Prediction via Nonparametric Kernel Regression Methods**
+The package is organized so that reviewers can answer three questions quickly:
 
-The purpose of this repository is to make the open-source software (OSS) dataset construction process transparent and reproducible. The OSS datasets were constructed from public GitHub issue records and transformed into grouped cumulative fault-count sequences for software reliability prediction.
+1. What data are included?
+2. How were the OSS monthly datasets constructed?
+3. How can the single-kernel and multi-kernel experiments be run?
 
----
-
-## 1. Repository Contents
+## Repository Layout
 
 ```text
 .
 ├── README.md
+├── requirements.txt
 ├── data/
-│   └── IST_OSS_datasets_clean_release.xlsx
+│   ├── IST_OSS_datasets_records_OSS1_OSS8.xlsx
+│   ├── processed_monthly/
+│   │   ├── monthly_cumulative_data_reconstructed.csv
+│   │   ├── OSS1_redis_monthly.csv
+│   │   ├── ...
+│   │   └── OSS8_rsshub_monthly.csv
+│   ├── OSS/
+│   │   ├── OSS_1.xlsx
+│   │   ├── ...
+│   │   └── OSS_8.xlsx
+│   └── CSS/
+│       ├── CSS_1.xlsx
+│       ├── ...
+│       └── CSS_6.xlsx
 └── scripts/
-  ├── construct_oss_datasets.py
-  └── run_experiments.py
-
- 
+    ├── construct_oss_datasets.py
+    ├── single_kernel_reproduce.py
+    └── multi_kernel_reproduce.py
 ```
 
-The main dataset file is:
+## Environment
+
+Python 3.10 or later is recommended.
+
+Install the required packages from the repository root:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+The required Python packages are:
 
 ```text
-data/IST_OSS_datasets_clean_release.xlsx
+numpy
+pandas
+openpyxl
+numba
+pyswarm
 ```
 
-This Excel file contains the cleaned OSS issue records and the corresponding monthly cumulative fault-count data used in the experiments.
+## Data Files
 
----
+### Main OSS Workbook
 
-## 2. OSS Dataset Overview
+The main OSS workbook is:
 
-The OSS datasets were collected from six public GitHub repositories. Each raw issue record contains the issue number, issue title, issue creation time, and issue labels/categories. The issue creation time is used as the fault-detection time.
+```text
+data/IST_OSS_datasets_records_OSS1_OSS8.xlsx
+```
 
-| Dataset ID | Project  | GitHub Repository    | Raw Records | Time Span                | Monthly Observations |
-| ---------- | -------- | -------------------- | ----------: | ------------------------ | -------------------: |
-| OSS1       | Redis    | `redis/redis`        |         150 | 2011-09-16 to 2022-09-23 |                  133 |
-| OSS2       | Wox      | `Wox-launcher/Wox`   |         371 | 2014-01-06 to 2023-03-24 |                  111 |
-| OSS3       | Backbone | `jashkenas/backbone` |         190 | 2010-10-14 to 2023-01-19 |                  148 |
-| OSS4       | Homebrew | `Homebrew/brew`      |         768 | 2016-04-03 to 2023-04-07 |                   85 |
-| OSS5       | PyTorch  | `pytorch/pytorch`    |        1266 | 2016-09-18 to 2023-03-27 |                   79 |
-| OSS6       | Chart.js | `chartjs/Chart.js`   |        2069 | 2013-03-18 to 2023-03-29 |                  121 |
+It contains four sheets:
 
----
+| Sheet | Purpose |
+|---|---|
+| `README` | Brief workbook-level description |
+| `Dataset_Metadata` | Dataset IDs, projects, repositories, time spans, and observation counts |
+| `OSS_Bug_Fix_Issue_Records` | Cleaned bug/fault-related GitHub issue records |
+| `Monthly_Cumulative_Data` | Monthly fault counts and cumulative fault counts |
 
-## 3. Excel File Description
+The construction script also accepts the legacy raw-record sheet name
+`Raw_Issue_Records` for compatibility, but the current workbook uses
+`OSS_Bug_Fix_Issue_Records`.
 
-The file `IST_OSS_datasets_clean_release.xlsx` contains four sheets.
+### OSS Datasets
 
-| Sheet Name                | Description                                                                |
-| ------------------------- | -------------------------------------------------------------------------- |
-| `README`                  | Brief description of the data file                                         |
-| `Dataset_Metadata`        | Summary information for each OSS dataset                                   |
-| `Raw_Issue_Records`       | Cleaned raw GitHub issue records for the six OSS datasets                  |
-| `Monthly_Cumulative_Data` | Monthly fault counts and cumulative fault counts used as experiment inputs |
+The OSS datasets were constructed from public GitHub issue records. Issue
+creation time is treated as the fault-detection time. Records are aggregated
+into calendar-month intervals, and months with no newly reported fault-related
+issues are retained as zero-increment months.
 
-The sheet `Raw_Issue_Records` contains the following columns:
+| ID | Project | Repository | Raw records | Time span | Monthly observations | Final cumulative faults |
+|---|---|---:|---:|---|---:|---:|
+| OSS1 | Redis | `redis/redis` | 150 | 2011-09-16 to 2022-09-23 | 133 | 150 |
+| OSS2 | Wox | `Wox-launcher/Wox` | 371 | 2014-01-06 to 2023-03-24 | 111 | 371 |
+| OSS3 | Backbone | `jashkenas/backbone` | 190 | 2010-10-14 to 2023-01-19 | 148 | 190 |
+| OSS4 | Homebrew | `Homebrew/brew` | 768 | 2016-04-03 to 2023-04-07 | 85 | 768 |
+| OSS5 | PyTorch | `pytorch/pytorch` | 1266 | 2016-09-18 to 2023-03-27 | 79 | 1266 |
+| OSS6 | Chart.js | `chartjs/Chart.js` | 2069 | 2013-03-18 to 2023-03-29 | 121 | 2069 |
+| OSS7 | DevDocs | `freeCodeCamp/devdocs` | 234 | 2013-11-01 to 2023-03-06 | 113 | 234 |
+| OSS8 | RSSHub | `DIYgod/RSSHub` | 1089 | 2018-04-27 to 2023-04-07 | 61 | 1089 |
 
-| Column          | Description                                |
-| --------------- | ------------------------------------------ |
-| `dataset_id`    | Dataset identifier, from OSS1 to OSS6      |
-| `project`       | Project name                               |
-| `repository`    | GitHub repository                          |
-| `issue_number`  | GitHub issue number                        |
-| `title`         | Issue title                                |
-| `created_at`    | Issue creation time                        |
-| `labels`        | Issue labels or categories                 |
-| `created_month` | Calendar month extracted from `created_at` |
-| `issue_url`     | URL of the corresponding GitHub issue      |
+### Derived Monthly CSV Files
 
-The sheet `Monthly_Cumulative_Data` contains the following columns:
+The directory:
 
-| Column                   | Description                                                                    |
-| ------------------------ | ------------------------------------------------------------------------------ |
-| `dataset_id`             | Dataset identifier                                                             |
-| `project`                | Project name                                                                   |
-| `month`                  | Calendar-month interval                                                        |
-| `monthly_fault_count`    | Number of newly reported fault-related issues in that month                    |
-| `cumulative_fault_count` | Cumulative number of reported fault-related issues up to the end of that month |
+```text
+data/processed_monthly/
+```
 
----
+contains reconstructed monthly datasets. Each CSV has the columns:
 
-## 4. Fault-Related Issue Selection
+```text
+Dataset ID, Project, Repository, Month, Monthly Fault Count, Cumulative Fault Count
+```
 
-Fault-related records were selected using project-specific labels or categories indicating bug reports, crashes, errors, or defect-related events.
+The combined file is:
 
-| Dataset  | Selection Rule                                                                                                                         |
-| -------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Redis    | Defect-related labels such as `class:bug`, `critical bug`, `non critical bug`, and `crash report`                                      |
-| Wox      | Labels containing `bug`, such as `bug`, `bug, plugin`, `bug, ui`, and `bug, help wanted`                                               |
-| Backbone | Labels containing `bug`, such as `bug`, `bug, fixed`, and `bug, change`                                                                |
-| Homebrew | Mainly labels containing `bug` or other defect-related categories in the original collected issue set                                  |
-| PyTorch  | Defect-related labels such as `bug`, `module: crash`, `module: error checking`, `module: dependency bug`, and `module: assert failure` |
-| Chart.js | Issues labeled with `type: bug`                                                                                                        |
+```text
+data/processed_monthly/monthly_cumulative_data_reconstructed.csv
+```
 
-The constructed OSS datasets represent reported fault-count processes. They should be interpreted as fault-detection records rather than complete fault-repair histories, because issue creation times are used instead of issue closing times or fix-commit times.
+The per-dataset files are named:
 
----
+```text
+OSS1_redis_monthly.csv
+OSS2_wox_monthly.csv
+OSS3_backbone_monthly.csv
+OSS4_brew_monthly.csv
+OSS5_pytorch_monthly.csv
+OSS6_chartjs_monthly.csv
+OSS7_devdocs_monthly.csv
+OSS8_rsshub_monthly.csv
+```
 
-## 5. Dataset Construction Procedure
+### Experiment Input Arrays
 
-The raw GitHub issue records were transformed into grouped cumulative fault-count sequences using the following procedure:
+The prediction scripts read simple Excel files from a data directory. Each file
+is treated as one dataset.
 
-1. Collect raw issue records from the corresponding GitHub repositories.
-2. Select fault-related issues according to the label rules described above.
-3. Remove duplicate issue numbers.
-4. Sort the remaining records chronologically by issue creation time.
-5. Aggregate the issue records into calendar-month intervals.
-6. Retain months with no newly reported fault-related issues as zero-increment months.
-7. Compute the cumulative fault-count sequence by cumulatively summing the monthly counts.
+`data/OSS/` contains the single-column cumulative fault-count arrays generated
+from the OSS monthly data:
 
-Let (n_j) denote the number of newly reported fault-related issues in the (j)-th month. The cumulative fault count is defined as
+| File | Observations | Final cumulative faults |
+|---|---:|---:|
+| `data/OSS/OSS_1.xlsx` | 133 | 150 |
+| `data/OSS/OSS_2.xlsx` | 111 | 371 |
+| `data/OSS/OSS_3.xlsx` | 148 | 190 |
+| `data/OSS/OSS_4.xlsx` | 85 | 768 |
+| `data/OSS/OSS_5.xlsx` | 79 | 1266 |
+| `data/OSS/OSS_6.xlsx` | 121 | 2069 |
+| `data/OSS/OSS_7.xlsx` | 113 | 234 |
+| `data/OSS/OSS_8.xlsx` | 61 | 1089 |
 
-[
-y_j = \sum_{k=1}^{j} n_k,
-]
+`data/CSS/` contains additional single-column cumulative fault-count arrays:
 
-where (y_j) represents the cumulative number of reported faults up to the end of month (j).
+| File | Observations | Final cumulative faults |
+|---|---:|---:|
+| `data/CSS/CSS_1.xlsx` | 17 | 54 |
+| `data/CSS/CSS_2.xlsx` | 14 | 38 |
+| `data/CSS/CSS_3.xlsx` | 19 | 120 |
+| `data/CSS/CSS_4.xlsx` | 14 | 9 |
+| `data/CSS/CSS_5.xlsx` | 20 | 66 |
+| `data/CSS/CSS_6.xlsx` | 30 | 52 |
 
----
+## Reconstructing the OSS Monthly Datasets
 
-## 6. Reconstructing the Monthly Datasets
-
-To reconstruct the monthly cumulative fault-count sequences from the cleaned raw issue records, run:
+Run the construction script from the repository root:
 
 ```bash
 python scripts/construct_oss_datasets.py
 ```
 
-The script reads the raw issue records from:
+This reads:
 
 ```text
-data/IST_OSS_datasets_clean_release.xlsx
+data/IST_OSS_datasets_records_OSS1_OSS8.xlsx
 ```
 
-and regenerates the monthly cumulative data corresponding to the sheet:
+and writes:
 
 ```text
-Monthly_Cumulative_Data
+data/processed_monthly/*.csv
+data/OSS/OSS_*.xlsx
 ```
 
----
+The script compares the reconstructed monthly data with the
+`Monthly_Cumulative_Data` sheet in the workbook. A successful run prints:
 
-## 7. Running the Experiments
+```text
+[OK] Reconstructed monthly data matches the Monthly_Cumulative_Data sheet.
+```
 
-To reproduce the prediction experiments, run:
+Explicit equivalent command:
 
 ```bash
-python scripts/run_experiments.py
+python scripts/construct_oss_datasets.py \
+  --input data/IST_OSS_datasets_records_OSS1_OSS8.xlsx \
+  --output-dir data/processed_monthly \
+  --oss-output-dir data/OSS
 ```
 
-The experiments use the grouped cumulative fault-count sequences in `Monthly_Cumulative_Data`.
+## Running the Prediction Experiments
 
-The prediction settings correspond to three testing phases:
+The experiment scripts support two input formats:
 
-| Phase        | Initial Training Ratio |
-| ------------ | ---------------------: |
-| Early phase  |                    20% |
-| Middle phase |                    50% |
-| Late phase   |                    80% |
+1. One numeric column: cumulative failures `y`; the script creates an implicit
+   index `1..n`.
+2. Two numeric columns: time/order `x` and cumulative failures `y`; `x` is used
+   only for sorting. The model input is normalized internally by the number of
+   observations.
 
-The main evaluation metric is PMAE.
+Header rows are not required. Non-numeric rows are ignored.
 
----
+The default start ratios are:
 
-## 8. Notes
+```text
+0.2, 0.5, 0.8
+```
 
-The GitHub repositories may continue to evolve after the data collection period. Therefore, the released Excel file should be used to reproduce the exact datasets used in the paper.
+The main error metric is PMAE.
 
-This repository provides the cleaned raw issue records, the monthly cumulative fault-count sequences, and the scripts needed to reproduce the dataset construction and experiments.
+### Single-Kernel Experiment
+
+Run the OSS single-kernel experiment:
+
+```bash
+python scripts/single_kernel_reproduce.py \
+  --data-dir data/OSS \
+  --output single_kernel_OSS_results.xlsx
+```
+
+Run the CSS single-kernel experiment:
+
+```bash
+python scripts/single_kernel_reproduce.py \
+  --data-dir data/CSS \
+  --output single_kernel_CSS_results.xlsx
+```
+
+Useful explicit settings:
+
+```bash
+python scripts/single_kernel_reproduce.py \
+  --data-dir data/OSS \
+  --output single_kernel_OSS_results.xlsx \
+  --processes 8 \
+  --start-ratios 0.2,0.5,0.8 \
+  --grid-size 100 \
+  --lscv-grid-size 100
+```
+
+The output workbook contains four sheets:
+
+```text
+NW_Fixed
+NW_Dynamic
+LL_Fixed
+LL_Dynamic
+```
+
+Each sheet contains:
+
+```text
+Dataset, Target_Start_Ratio, Actual_Start_Ratio, Predicted_Y_Sequence, PMAE
+```
+
+### Multi-Kernel Experiment
+
+Run the OSS multi-kernel experiment:
+
+```bash
+python scripts/multi_kernel_reproduce.py \
+  --data-dir data/OSS \
+  --output multi_kernel_OSS_results.xlsx
+```
+
+Run the CSS multi-kernel experiment:
+
+```bash
+python scripts/multi_kernel_reproduce.py \
+  --data-dir data/CSS \
+  --output multi_kernel_CSS_results.xlsx
+```
+
+Useful explicit settings:
+
+```bash
+python scripts/multi_kernel_reproduce.py \
+  --data-dir data/OSS \
+  --output multi_kernel_OSS_results.xlsx \
+  --processes 4 \
+  --start-ratios 0.2,0.5,0.8 \
+  --num-restarts 5 \
+  --swarmsize 50 \
+  --maxiter 50 \
+  --lscv-grid-size 100
+```
+
+Use `--fixed-only` to run only fixed-mode predictions:
+
+```bash
+python scripts/multi_kernel_reproduce.py \
+  --data-dir data/OSS \
+  --output multi_kernel_OSS_fixed_only.xlsx \
+  --fixed-only
+```
+
+The multi-kernel script uses PSO optimization through `pyswarm`.
+`--use-weight-refine` enables the optional weight-refinement stage.
+
+## Quick Smoke Tests
+
+These commands use reduced grids and one start ratio. They are intended only to
+verify that the scripts run successfully, not to reproduce the final experiment
+settings.
+
+```bash
+python scripts/single_kernel_reproduce.py \
+  --data-dir data/OSS \
+  --output smoke_single_kernel.xlsx \
+  --processes 1 \
+  --start-ratios 0.8 \
+  --grid-size 5 \
+  --lscv-grid-size 5
+```
+
+```bash
+python scripts/multi_kernel_reproduce.py \
+  --data-dir data/OSS \
+  --output smoke_multi_kernel.xlsx \
+  --processes 1 \
+  --start-ratios 0.8 \
+  --fixed-only \
+  --num-restarts 1 \
+  --swarmsize 5 \
+  --maxiter 2 \
+  --lscv-grid-size 5
+```
+
+## Reproducibility Notes
+
+- The OSS construction step removes duplicate issue numbers within each
+  dataset.
+- The monthly aggregation keeps a continuous calendar-month range from the
+  first fault-related issue to the last fault-related issue.
+- Months without new fault-related issues are retained with zero monthly
+  increments.
+- The cumulative fault-count sequence is the cumulative sum of the monthly
+  fault counts.
+- `Actual_Start_Ratio` can differ slightly from `Target_Start_Ratio` because
+  the starting index is computed from the integer observation count.
+- Multi-kernel PSO optimization can be time-consuming. Runtime depends on the
+  number of datasets, start ratios, worker processes, restarts, swarm size, and
+  iteration count.
+
+## Minimal Reviewer Workflow
+
+From a clean checkout:
+
+```bash
+python -m pip install -r requirements.txt
+python scripts/construct_oss_datasets.py
+python scripts/single_kernel_reproduce.py --data-dir data/OSS --output single_kernel_OSS_results.xlsx
+python scripts/multi_kernel_reproduce.py --data-dir data/OSS --output multi_kernel_OSS_results.xlsx
+```
+
+For the additional CSS datasets, replace `data/OSS` with `data/CSS`.

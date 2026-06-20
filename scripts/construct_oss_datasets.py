@@ -7,10 +7,11 @@ Input
 -----
 By default, the script reads:
 
-    data/IST_OSS_datasets_clean_release.xlsx
+    data/IST_OSS_datasets_records_OSS1_OSS8.xlsx
 
-The workbook is expected to contain a sheet named ``Raw_Issue_Records`` with at
-least the following columns:
+The workbook is expected to contain a raw-record sheet named
+``OSS_Bug_Fix_Issue_Records``. The legacy sheet name ``Raw_Issue_Records`` is
+also accepted. The sheet must contain at least the following columns:
 
     Dataset ID, Project, Repository, Issue Number, Created At
 
@@ -21,12 +22,18 @@ The script writes:
     data/processed_monthly/OSS1_redis_monthly.csv
     data/processed_monthly/OSS2_wox_monthly.csv
     ...
-    data/processed_monthly/OSS6_chartjs_monthly.csv
+    data/processed_monthly/OSS8_rsshub_monthly.csv
     data/processed_monthly/monthly_cumulative_data_reconstructed.csv
+    data/OSS/OSS_1.xlsx
+    data/OSS/OSS_2.xlsx
+    ...
+    data/OSS/OSS_8.xlsx
 
 Each output CSV contains monthly fault counts and cumulative fault counts.
 Months with no newly reported fault-related issues are retained with zero
 increments.
+Each ``data/OSS/OSS_*.xlsx`` file contains only the cumulative fault-count
+sequence in the first column, without a header row.
 
 Usage
 -----
@@ -37,8 +44,9 @@ From the repository root:
 Optional arguments:
 
     python scripts/construct_oss_datasets.py \
-        --input data/IST_OSS_datasets_clean_release.xlsx \
-        --output-dir data/processed_monthly
+        --input data/IST_OSS_datasets_records_OSS1_OSS8.xlsx \
+        --output-dir data/processed_monthly \
+        --oss-output-dir data/OSS
 """
 
 from __future__ import annotations
@@ -51,11 +59,11 @@ from typing import Dict, Iterable
 import pandas as pd
 
 
-RAW_SHEET_NAME = "Raw_Issue_Records"
+RAW_SHEET_NAMES = ("OSS_Bug_Fix_Issue_Records", "Raw_Issue_Records")
 MONTHLY_SHEET_NAME = "Monthly_Cumulative_Data"
 
-# Expected order in the paper.
-DATASET_ORDER = ["OSS1", "OSS2", "OSS3", "OSS4", "OSS5", "OSS6"]
+# Expected order in the paper and added reviewer datasets.
+DATASET_ORDER = ["OSS1", "OSS2", "OSS3", "OSS4", "OSS5", "OSS6", "OSS7", "OSS8"]
 
 # File-name suffixes used for per-dataset CSV files.
 DATASET_SLUGS: Dict[str, str] = {
@@ -65,6 +73,8 @@ DATASET_SLUGS: Dict[str, str] = {
     "OSS4": "brew",
     "OSS5": "pytorch",
     "OSS6": "chartjs",
+    "OSS7": "devdocs",
+    "OSS8": "rsshub",
 }
 
 
@@ -88,10 +98,26 @@ def rename_columns(df: pd.DataFrame) -> pd.DataFrame:
     missing = required_columns.difference(df.columns)
     if missing:
         raise ValueError(
-            "The Raw_Issue_Records sheet is missing required columns: "
+            "The raw issue records sheet is missing required columns: "
             + ", ".join(sorted(missing))
         )
     return df
+
+
+def read_raw_records(input_path: Path) -> pd.DataFrame:
+    """Read the raw issue records sheet from the current or legacy workbook format."""
+    last_error: Exception | None = None
+    for sheet_name in RAW_SHEET_NAMES:
+        try:
+            return pd.read_excel(input_path, sheet_name=sheet_name)
+        except Exception as exc:
+            last_error = exc
+
+    accepted = ", ".join(RAW_SHEET_NAMES)
+    raise ValueError(
+        f"Could not read a raw issue records sheet from {input_path}. "
+        f"Expected one of: {accepted}."
+    ) from last_error
 
 
 def full_month_range(start: pd.Timestamp, end: pd.Timestamp) -> pd.PeriodIndex:
@@ -154,9 +180,10 @@ def construct_monthly_counts(raw_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(records)
 
 
-def write_outputs(monthly_df: pd.DataFrame, output_dir: Path) -> None:
-    """Write combined and per-dataset monthly CSV files."""
+def write_outputs(monthly_df: pd.DataFrame, output_dir: Path, oss_output_dir: Path) -> None:
+    """Write combined/per-dataset monthly CSVs and OSS cumulative Excel arrays."""
     output_dir.mkdir(parents=True, exist_ok=True)
+    oss_output_dir.mkdir(parents=True, exist_ok=True)
 
     combined_path = output_dir / "monthly_cumulative_data_reconstructed.csv"
     monthly_df.to_csv(combined_path, index=False, encoding="utf-8-sig")
@@ -168,6 +195,10 @@ def write_outputs(monthly_df: pd.DataFrame, output_dir: Path) -> None:
         slug = DATASET_SLUGS.get(dataset_id, dataset_id.lower())
         path = output_dir / f"{dataset_id}_{slug}_monthly.csv"
         sub.to_csv(path, index=False, encoding="utf-8-sig")
+
+        dataset_number = int(dataset_id.replace("OSS", ""))
+        oss_path = oss_output_dir / f"OSS_{dataset_number}.xlsx"
+        sub[["Cumulative Fault Count"]].to_excel(oss_path, index=False, header=False)
 
 
 def compare_with_workbook(input_path: Path, reconstructed_df: pd.DataFrame) -> None:
@@ -234,14 +265,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--input",
         type=Path,
-        default=Path("data/IST_OSS_datasets_clean_release.xlsx"),
-        help="Path to IST_OSS_datasets_clean_release.xlsx",
+        default=Path("data/IST_OSS_datasets_records_OSS1_OSS8.xlsx"),
+        help="Path to the OSS dataset workbook",
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
         default=Path("data/processed_monthly"),
         help="Directory where reconstructed CSV files will be saved",
+    )
+    parser.add_argument(
+        "--oss-output-dir",
+        type=Path,
+        default=Path("data/OSS"),
+        help="Directory where single-column OSS_*.xlsx cumulative arrays will be saved",
     )
     parser.add_argument(
         "--no-compare",
@@ -260,11 +297,12 @@ def main() -> None:
             "Run this script from the repository root or pass --input explicitly."
         )
 
-    raw_df = pd.read_excel(args.input, sheet_name=RAW_SHEET_NAME)
+    raw_df = read_raw_records(args.input)
     monthly_df = construct_monthly_counts(raw_df)
-    write_outputs(monthly_df, args.output_dir)
+    write_outputs(monthly_df, args.output_dir, args.oss_output_dir)
 
     print(f"[OK] Wrote reconstructed monthly datasets to: {args.output_dir}")
+    print(f"[OK] Wrote OSS cumulative Excel arrays to: {args.oss_output_dir}")
     print("[OK] Generated files:")
     print(f"     - {args.output_dir / 'monthly_cumulative_data_reconstructed.csv'}")
     for dataset_id in DATASET_ORDER:
@@ -272,6 +310,10 @@ def main() -> None:
         path = args.output_dir / f"{dataset_id}_{slug}_monthly.csv"
         if path.exists():
             print(f"     - {path}")
+        dataset_number = int(dataset_id.replace("OSS", ""))
+        oss_path = args.oss_output_dir / f"OSS_{dataset_number}.xlsx"
+        if oss_path.exists():
+            print(f"     - {oss_path}")
 
     summary = (
         monthly_df.groupby(["Dataset ID", "Project"], as_index=False)
